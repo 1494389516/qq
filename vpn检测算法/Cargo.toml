@@ -1,0 +1,33 @@
+[package]
+name = "vpn_detection_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+crossbeam-channel = "0.5"
+crossbeam-utils = "0.8"
+rustls = "0.21"
+webpki = "0.22"
+ring = "0.16"
+bytes = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
+
+[lib]
+name = "vpn_detection_rust"
+crate-type = ["cdylib", "rlib"]
+
+# FFI接口，供C++调用
+[dependencies.cbindgen]
+version = "0.24"
+optional = true
+
+[features]
+default = []
+ffi = ["cbindgen"]
