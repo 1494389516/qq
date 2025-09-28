@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+  # Python控制层 - 智能决策大脑
+  python-control:
+    build:
+      context: ./python_control
+      dockerfile: Dockerfile
+    container_name: ddos-python-control
+    ports:
+      - "8000:8000"
+    environment:
+      - ML_MODEL_PATH=/models
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models:/models
+      - ./logs:/logs
+    depends_on:
+      - rust-storage
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # C++检测层 - 高性能引擎
+  cpp-detector:
+    build:
+      context: ./cpp_detector
+      dockerfile: Dockerfile
+    container_name: ddos-cpp-detector
+    ports:
+      - "8001:8001"
+    environment:
+      - SIMD_OPTIMIZATION=true
+      - THREAD_COUNT=8
+      - MEMORY_POOL_SIZE=1GB
+    volumes:
+      - /dev/hugepages:/dev/hugepages
+      - ./config:/config
+    privileged: true  # 需要访问网络接口
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Go反击层 - 并发执行器
+  go-counter:
+    build:
+      context: ./go_counter
+      dockerfile: Dockerfile
+    container_name: ddos-go-counter
+    ports:
+      - "8002:8002"
+    environment:
+      - MAX_WORKERS=100
+      - TASK_QUEUE_SIZE=10000
+      - RATE_LIMIT_ENABLED=true
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # 多副本提升处理能力
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  # Rust存储层 - 安全数据处理
+  rust-storage:
+    build:
+      context: ./rust_storage
+      dockerfile: Dockerfile
+    container_name: ddos-rust-storage
+    ports:
+      - "8003:8003"
+    environment:
+      - STORAGE_PATH=/data
+      - CACHE_SIZE=1000000
+      - TTL_SECONDS=3600
+    volumes:
+      - ddos_data:/data
+      - ./config/storage_config.toml:/config/storage_config.toml
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # JavaScript前端层 - 监控大屏
+  js-frontend:
+    build:
+      context: ./js_frontend
+      dockerfile: Dockerfile
+    container_name: ddos-js-frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_URL=http://python-control:8000
+    volumes:
+      - ./frontend_config:/config
+    depends_on:
+      - python-control
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis缓存层 - 高速数据缓存
+  redis:
+    image: redis:7-alpine
+    container_name: ddos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ddos-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Grafana仪表板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ddos-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+
+  # Jaeger链路追踪
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: ddos-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP Collector
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+
+  # NGINX负载均衡器
+  nginx:
+    image: nginx:alpine
+    container_name: ddos-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - python-control
+      - js-frontend
+    networks:
+      - ddos-defense-net
+    restart: unless-stopped
+
+volumes:
+  ddos_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  ddos-defense-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
